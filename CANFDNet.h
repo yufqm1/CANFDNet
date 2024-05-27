@@ -10,6 +10,12 @@
 #include <basetsd.h>
 
 #define DEFAULT_BUFFLEN 1024
+#define CAN_LEN 8
+#define CANFD_LEN 64
+#define IP_LEN 16
+#define PORT_LEN 10
+#define NAME_LEN 125
+
 #pragma pack(push,1)
 
 enum MsgID
@@ -49,27 +55,27 @@ struct StartRequest
     ProtocolType proType;
     WorkMode workMode;
     bool isAccelerate;
-    char ip[16];
-    char localPort[10];
-    char workPort[10];
+    char ip[IP_LEN];
+    char localPort[PORT_LEN];
+    char workPort[PORT_LEN];
 };
 
 // ¹Ø±Õ
 struct CloseRequest
 {
     bool toClose;
-    char ip[16];
-    char port[10];
-    char deviceName[125];
+    char ip[IP_LEN];
+    char port[PORT_LEN];
+    char deviceName[NAME_LEN];
 };
 
 // ÐÞ¸Ä
 struct ModifyRequest
 {
     UINT32 speed;
-    char ip[16];
-    char port[10];
-    char macAddr[125];
+    char ip[IP_LEN];
+    char port[PORT_LEN];
+    char macAddr[NAME_LEN];
 };
 
 struct CANFDHead
@@ -112,7 +118,7 @@ struct CANFDRequest
 
 	UINT8 channel;
 	UINT8 length;
-	UINT8 data[64];
+	UINT8 data[CANFD_LEN];
 
 	UINT8 checkCode;
 };
@@ -139,7 +145,7 @@ struct CANFDResponse
 
 	UINT8 channel;
 	UINT8 length;
-	UINT8 data[64];
+	UINT8 data[CANFD_LEN];
 
     UINT8 checkCode;
 };
@@ -179,11 +185,10 @@ extern "C" {
     DLL_API bool sendCANFD(const CANFDRequest& req,int maxLen);
     DLL_API bool sendTimeSendPkg(const TimeSendPkgRequest* timeSendReq);
     DLL_API bool sendCanBusRate(const BusUtilizationIndicationPkgRequest* busReq);
-	DLL_API int  recvCANFDInfo(CANFDResponse* canResponse, int maxLen);
+	DLL_API int  recvCANFDInfo(CANFDResponse* response, int maxLen);
 	DLL_API bool setDevInfo(const ModifyRequest* modifyReq, int maxLen);
 	DLL_API bool getDevInfo(const ModifyRequest* modifyReq, int maxLen);
     DLL_API bool closeDev();
-    //DLL_API bool endianExchange(UINT8* pData, int nLen);
 #ifdef __cplusplus
 }
 #endif

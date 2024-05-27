@@ -25,10 +25,28 @@ int sendRes, recvRes;
 SOCKET _connsocket = INVALID_SOCKET;
 
 CANFDHead canHead = {};
-CANFDResponse response = {};
+CANFDResponse canResponse = {};
 
 bool recvCANFDData(const SOCKET& socket);
 
+class thread_guard
+{
+public:
+	explicit thread_guard(std::shared_ptr<std::thread> t_) :t(t_) {}
+	~thread_guard() {
+		if (t->joinable())
+		{
+			t->join();
+		}
+	}
+
+	thread_guard(thread_guard const&) = delete;
+	thread_guard& operator=(thread_guard const&) = delete;
+
+private:
+	std::shared_ptr<std::thread> t;
+
+};
 std::string getHEXValue(char* fp,int offset)
 {
 	std::string res_str;
@@ -212,6 +230,7 @@ bool endianExchange2(CANFDRequest* pData, int nLen)
 /********************************************
 *	对外接口
 *********************************************/
+std::shared_ptr<thread_guard> pGuard = nullptr;
 bool connectDev(const char* ip, const char* port)
 {
 	WORD sockVersion = MAKEWORD(2, 2);
@@ -238,6 +257,8 @@ bool connectDev(const char* ip, const char* port)
 		return false;
 	}
 
+	pGuard = std::make_shared<thread_guard>(std::make_shared<std::thread>(recvCANFDData, _connsocket));
+
 	return true;
 }
 
@@ -246,22 +267,18 @@ bool sendCANFD(const CANFDRequest& req, int maxLen)
 	uint8_t* fd = (uint8_t*)&req;
 	endianExchange(fd, sizeof(CANFDRequest));
 
-	std::thread th(recvCANFDData, _connsocket);
 	while (true)
 	{
 		std::cout << "------------- enter send data:" << std::endl;
-		//getchar();
 		int res = send(_connsocket, (char*)&req, sizeof(req), 0);
 		if (res == sizeof(req))
 		{
 			std::cout << "=============== send success... res = " << res << std::endl;
 		}
 
-		Sleep(500);
+		Sleep(3000);
 		break;
 	}
-
-	th.join();
 
 	return true;
 }
@@ -285,12 +302,34 @@ bool sendCanBusRate(const BusUtilizationIndicationPkgRequest* busReq)
     return false;
 }
 
-int recvCANFDInfo(CANFDResponse* canResponse, int maxLen)
+int recvCANFDInfo(CANFDResponse* respose, int maxLen)
 {
-	std::cout << "start to recvinfo" << std::endl;
+	std::cout << "recvCANFDInfo: start to recvinfo" << std::endl;
 
-	canResponse->head = canHead;
-	response = response;
+	respose->head = canHead;
+	respose->timestamp = canResponse.timestamp;
+	respose->id = canResponse.id;
+	respose->flag_res0 = canResponse.flag_res0;
+	respose->flag_echoflag = canResponse.flag_echoflag;
+	respose->flag_echo = canResponse.flag_echo;
+	respose->flag_fd = canResponse.flag_fd;
+	respose->flag_rtr = canResponse.flag_rtr;
+	respose->flag_ext = canResponse.flag_ext;
+	respose->flag_err = canResponse.flag_err;
+	respose->flag_brs = canResponse.flag_brs;
+	respose->flag_esi = canResponse.flag_esi;
+	respose->flag_sndDelay = canResponse.flag_sndDelay;
+	respose->flag_store = canResponse.flag_store;
+	respose->channel = canResponse.channel;
+	respose->length = canResponse.length;
+	for (int i = 0;i<sizeof(respose->data)/sizeof(UINT8);i++)
+	{
+		respose->data[i] = canResponse.data[i];
+	}
+	respose->checkCode = canResponse.checkCode;
+
+	memset(&canHead, 0, sizeof(canHead));
+	memset(&canResponse, 0, sizeof(canResponse));
 
 	return true;
 }
@@ -310,7 +349,6 @@ bool modifyDevInfo(const ModifyRequest* modifyReq)
     sendRes = send(connectSocket, (char*)modifyReq, sizeof(*modifyReq), 0);
 
     if (sendRes == SOCKET_ERROR) {
-        //printf("send failed with error: %d\n", WSAGetLastError());
         closesocket(connectSocket);
         WSACleanup();
         return false;
@@ -326,17 +364,14 @@ bool closeDev()
 	return true;
 }
 
-
-
-
 bool recvCANFDData(const SOCKET& socket)
 {
 	while(true)
 	{
-		Sleep(500);
+		Sleep(100);
 		std::cout << "RECV -----> start to recv:" << std::endl;
-		// CANFDHead canHead = {};
 		int nLen = recv(_connsocket, (char*)&canHead, sizeof(CANFDHead), 0);
+		std::cout << "+++++++++++++++" << std::endl;
 		if (nLen <= 0)
 		{
 			std::cout << "blocking reception..." << nLen << std::endl;
@@ -357,36 +392,38 @@ bool recvCANFDData(const SOCKET& socket)
 		std::cout << "--------- start to recv body:" << std::endl;
 		// 读包体
 		// CANFDResponse response = {};
-		int bodyLen = recv(_connsocket, (char*)&response + sizeof(CANFDHead), sizeof(CANFDResponse) - sizeof(CANFDHead), 0);
+		int bodyLen = recv(_connsocket, (char*)&canResponse + sizeof(CANFDHead), sizeof(CANFDResponse) - sizeof(CANFDHead), 0);
 		if (bodyLen == sizeof(CANFDResponse) - sizeof(CANFDHead))
 		{
 			// TODO  开始解析包体部分
-			bodyHEXValue(&response);
+			bodyHEXValue(&canResponse);
 
 			std::cout << "recv bodyLen = " << bodyLen << std::endl;
 			std::cout << "--------- print body:" << std::endl;
-			std::cout << response.timestamp << std::endl;
-			std::cout << response.id << std::endl;
-			std::cout << response.flag_res0 << std::endl;
-			std::cout << response.flag_echoflag << std::endl;
-			std::cout << response.flag_echo << std::endl;
-			std::cout << response.flag_fd << std::endl;
-			std::cout << response.flag_rtr << std::endl;
-			std::cout << response.flag_ext << std::endl;
-			std::cout << response.flag_err << std::endl;
-			std::cout << response.flag_brs << std::endl;
-			std::cout << response.flag_esi << std::endl;
-			std::cout << response.flag_sndDelay << std::endl;
-			std::cout << response.flag_store << std::endl;
-			std::cout << response.channel << std::endl;
-			std::cout << response.length << std::endl;
-			std::cout << response.data << std::endl;
-			std::cout << response.checkCode << std::endl;
+			std::cout << canResponse.timestamp << std::endl;
+			std::cout << canResponse.id << std::endl;
+			std::cout << canResponse.flag_res0 << std::endl;
+			std::cout << canResponse.flag_echoflag << std::endl;
+			std::cout << canResponse.flag_echo << std::endl;
+			std::cout << canResponse.flag_fd << std::endl;
+			std::cout << canResponse.flag_rtr << std::endl;
+			std::cout << canResponse.flag_ext << std::endl;
+			std::cout << canResponse.flag_err << std::endl;
+			std::cout << canResponse.flag_brs << std::endl;
+			std::cout << canResponse.flag_esi << std::endl;
+			std::cout << canResponse.flag_sndDelay << std::endl;
+			std::cout << canResponse.flag_store << std::endl;
+			std::cout << canResponse.channel << std::endl;
+			std::cout << canResponse.length << std::endl;
+			std::cout << canResponse.data << std::endl;
+			std::cout << canResponse.checkCode << std::endl;
 		}
 		else
 		{
 			std::cout << "recv data lose ..." << std::endl;
 		}
+
+		break;
 	}
 
     return true;
